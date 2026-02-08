@@ -7,7 +7,7 @@ SARMAAYA_API_URL = "https://beta-restapi.sarmaaya.pk/api/announcements/result-an
 
 # HuggingFace
 HF_TOKEN = os.environ.get("HF_TOKEN")
-HF_DATASET_NAME = "rafaytalha23/psx-pdf-announcements"
+HF_DATASET_ID = "rafaytalha23/psx-announcements-data"  # Dataset for storage
 
 # Paths
 DATA_DIR = Path("data")
