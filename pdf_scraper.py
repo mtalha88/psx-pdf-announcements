@@ -111,24 +111,48 @@ def scrape_psx_browser(days: int, ticker: str = None):
                 if ticker and symbol.upper() != ticker.upper():
                     continue
                 
+                # Check if we can find a better PDF URL
+                final_url = pdf_url
+                if pdf_url:
+                    # Extract ID
+                    # Patterns: 
+                    # .../download/attachment/269812-1.gif
+                    # .../download/attachment/269822.pdf
+                    try:
+                        import re
+                        match = re.search(r'/(\d+)(?:-\d+)?\.(?:gif|pdf|jpg|png)', pdf_url, re.IGNORECASE)
+                        if match:
+                            doc_id = match.group(1)
+                            # Construct potential document URL
+                            # User noticed: download/document/{id}.pdf is often the correct full file
+                            candidate_pdf = f"https://dps.psx.com.pk/download/document/{doc_id}.pdf"
+                            
+                            # Only check if the original is NOT already a document PDF
+                            # (If it's an attachment GIF/PDF, it might be a preview or old link)
+                            if "/document/" not in pdf_url:
+                                if verify_url_exists(candidate_pdf):
+                                    final_url = candidate_pdf
+                                    # Update title or log?
+                                    # print(f"Upgraded {pdf_url} -> {final_url}")
+                    except Exception as e:
+                        print(f"URL upgrade check failed: {e}")
+
                 # Filter by Date
                 try:
-                    # Parse "Feb 6, 2026"
+                    # ... existing date logic ...
                     row_dt = datetime.strptime(date_str, "%b %d, %Y").replace(tzinfo=timezone.utc)
                     if row_dt < cutoff_date:
-                        # Assuming rows are sorted desc, we can break?
-                        # Probably safer to continue checking a bit more
                         if (cutoff_date - row_dt).days > 2:
                             break 
                         continue
                 except Exception:
-                    pass # Date parsing error, include it to be safe or skip?
+                    pass 
 
                 results.append({
                     "ticker": symbol,
                     "title": title,
                     "date": f"{date_str} {time_str}",
-                    "pdf_url": pdf_url, 
+                    "pdf_url": final_url, 
                     "company": company
                 })
                 
@@ -138,6 +162,14 @@ def scrape_psx_browser(days: int, ticker: str = None):
             browser.close()
             
     return results
+
+def verify_url_exists(url: str) -> bool:
+    """Check if a URL exists (HEAD request)."""
+    try:
+        resp = requests.head(url, timeout=5)
+        return resp.status_code == 200
+    except:
+        return False
 
 def parse_sarmaaya_response(results, ticker):
     """Parse Sarmaaya API response."""
