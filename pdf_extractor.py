@@ -87,7 +87,8 @@ def _extract_from_pdf_bytes(pdf_bytes: bytes) -> str:
                 else:
                     # Fallback: OCR on page image
                     # pdfplumber to_image returns a PageImage, .original gives PIL Image
-                    api = page.to_image(resolution=150)
+                    # Higher resolution (300 DPI) for better OCR accuracy
+                    api = page.to_image(resolution=300)
                     ocr_text = _run_ocr(api.original)
                     if ocr_text:
                         text_parts.append(ocr_text)
