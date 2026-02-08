@@ -31,12 +31,18 @@ def scrape_psx():
                 
                 # Check for link
                 link = cells[5].query_selector("a")
-                if link:
-                    print(f"Link href: {link.get_attribute('href')}")
-                    print(f"Link onclick: {link.get_attribute('onclick')}")
-                    print(f"Link outerHTML: {link.evaluate('el => el.outerHTML')}")
-
-            for i, row in enumerate(rows[:5]):
+        # Test Page 2 directly
+        url_p2 = "https://dps.psx.com.pk/announcements/companies?page=2"
+        print(f"Navigating to {url_p2}...")
+        page.goto(url_p2)
+        try:
+            page.wait_for_selector("table tbody tr", timeout=10000)
+            rows_p2 = page.query_selector_all("table tbody tr")
+            print(f"Page 2 found {len(rows_p2)} rows.")
+            if len(rows_p2) > 0:
+                print(f"Page 2 First Row: {rows_p2[0].inner_text()[:50]}...")
+        except Exception as e:
+            print(f"Page 2 failed: {e}")
                 cells = row.query_selector_all("td")
                 if len(cells) > 0:
                     symbol = cells[0].inner_text()
