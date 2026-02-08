@@ -38,7 +38,7 @@ def _get_got_model():
             print("Loading GOT-OCR 2.0 model...")
             # trust_remote_code=True is essential
             _got_tokenizer = AutoTokenizer.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True)
-            _got_model = AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True, low_cpu_mem_usage=True, use_safetensors=True)
+            _got_model = AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True, low_cpu_mem_usage=True, use_safetensors=True, pad_token_id=_got_tokenizer.eos_token_id)
             _got_model = _got_model.eval()
         except Exception as e:
             print(f"Failed to load GOT-OCR: {e}")
@@ -55,6 +55,11 @@ def _run_got_ocr(image):
             image.save(tmp.name)
             tmp_path = tmp.name
         
+        # Check if tokenizer is valid
+        if tokenizer is None:
+             print("GOT-OCR Error: Tokenizer is None")
+             return ""
+             
         res = model.chat(tokenizer, tmp_path, ocr_type='ocr')
         
         try: os.unlink(tmp_path) 
@@ -63,6 +68,8 @@ def _run_got_ocr(image):
         return res
     except Exception as e:
         print(f"GOT-OCR Error: {e}")
+        import traceback
+        traceback.print_exc()
         return ""
 
 def _run_ocr(image):
@@ -75,7 +82,8 @@ def _run_ocr(image):
         try:
             import numpy as np
             img_np = np.array(image.convert("RGB"))
-            result = ocr.ocr(img_np, cls=True)
+            # cls argument caused error. Removing it. Use init param use_angle_cls=True logic.
+            result = ocr.ocr(img_np) 
             
             text_lines = []
             if result and result[0]:
@@ -89,9 +97,13 @@ def _run_ocr(image):
     # If text is empty or very short, try GOT-OCR
     if len(text_result.strip()) < 10:
         print("PaddleOCR result poor/empty. Trying GOT-OCR (Generative)...")
-        got_text = _run_got_ocr(image)
-        if got_text:
-            text_result = got_text
+        # Ensure image is valid
+        if image:
+             got_text = _run_got_ocr(image)
+             if got_text:
+                 text_result = got_text
+        else:
+             print("GOT-OCR skipped: Image is None")
             
     return text_result
 
