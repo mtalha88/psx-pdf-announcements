@@ -18,7 +18,9 @@ def _get_ocr_model():
             print("Loading PaddleOCR model...")
             # utilize CPU for Spaces (unless GPU available)
             # lang='en' covers English and numbers
-            _ocr_model = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
+            # use_gpu argument might be deprecated/invalid in newer versions?
+            # It seems so. Removing it.
+            _ocr_model = PaddleOCR(use_angle_cls=True, lang='en')
         except Exception as e:
             print(f"Failed to load PaddleOCR: {e}")
             return None
