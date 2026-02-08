@@ -1,3 +1,14 @@
+---
+title: Psx Pdf Announcements
+emoji: 🌖
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+sdk_version: 6.5.1
+app_file: app.py
+pinned: false
+---
+
 # PSX PDF Announcements API
 
 Public HuggingFace Space that scrapes PSX PDF announcements, extracts text, and provides sentiment analysis.
