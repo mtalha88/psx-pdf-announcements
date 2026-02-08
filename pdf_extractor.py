@@ -38,7 +38,14 @@ def _get_got_model():
             print("Loading GOT-OCR 2.0 model...")
             # trust_remote_code=True is essential
             _got_tokenizer = AutoTokenizer.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True)
-            _got_model = AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True, low_cpu_mem_usage=True, use_safetensors=True, pad_token_id=_got_tokenizer.eos_token_id)
+            
+            # Fix for "NoneType" error during padding
+            if _got_tokenizer.pad_token is None:
+                # Use eos_token as pad_token if missing
+                _got_tokenizer.pad_token = _got_tokenizer.eos_token
+                _got_tokenizer.pad_token_id = _got_tokenizer.eos_token_id
+            
+            _got_model = AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True, low_cpu_mem_usage=True, use_safetensors=True, pad_token_id=_got_tokenizer.pad_token_id)
             _got_model = _got_model.eval()
         except Exception as e:
             print(f"Failed to load GOT-OCR: {e}")
