@@ -7,5 +7,9 @@ Pillow>=10.0.0
 transformers>=4.40.0
 torch
 torchvision
+# OCR
+paddlepaddle
+paddleocr
+opencv-python-headless
 huggingface_hub
 datasets

@@ -7,47 +7,49 @@ import pdfplumber
 from PIL import Image
 
 # Lazy load OCR model
-_ocr_pipeline = None
+# OCR Model (Lazy Load)
+_ocr_model = None
 
-def load_ocr_model():
-    """Load TrOCR model directly for better stability."""
-    global _ocr_pipeline
-    if _ocr_pipeline is None:
+def _get_ocr_model():
+    global _ocr_model
+    if _ocr_model is None:
         try:
-            from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-            import torch
-            
-            # Use CUDA if available
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Loading TrOCR model on {device}...")
-            
-            processor = TrOCRProcessor.from_pretrained("microsoft/trocr-base-printed")
-            model = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-base-printed").to(device)
-            
-            _ocr_pipeline = (processor, model, device)
-            print("TrOCR model loaded successfully")
+            from paddleocr import PaddleOCR
+            print("Loading PaddleOCR model...")
+            # utilize CPU for Spaces (unless GPU available)
+            # lang='en' covers English and numbers
+            _ocr_model = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
         except Exception as e:
-            print(f"OCR load failed: {e}")
+            print(f"Failed to load PaddleOCR: {e}")
             return None
-    return _ocr_pipeline
+    return _ocr_model
 
-def _run_ocr(image) -> str:
-    """Run OCR on a PIL Image."""
+def _run_ocr(image):
+    """Run PaddleOCR on a PIL Image."""
+    ocr = _get_ocr_model()
+    if not ocr:
+        return ""
+    
     try:
-        models = load_ocr_model()
-        if models:
-            processor, model, device = models
-            # Convert to RGB
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-                
-            pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(device)
-            generated_ids = model.generate(pixel_values)
-            generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-            return generated_text
+        import numpy as np
+        # Convert PIL to Numpy (RGB)
+        img_np = np.array(image.convert("RGB"))
+        
+        # Run OCR
+        result = ocr.ocr(img_np, cls=True)
+        
+        # Parse results
+        # Result structure: [[[[x1,y1],[x2,y2]...], ("text", conf)], ...]
+        text_lines = []
+        if result and result[0]:
+            for line in result[0]:
+                text = line[1][0]
+                text_lines.append(text)
+        
+        return "\n".join(text_lines)
     except Exception as e:
-        print(f"OCR Inference error: {e}")
-    return ""
+        print(f"OCR Error: {e}")
+        return ""
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF or Image file bytes."""
