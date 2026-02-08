@@ -1,0 +1,17 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+
+# Data
+data/*.csv
+
+# Logs
+*.log
+
+# Environment
+.env
+.venv/
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,38 @@
+name: Scrape PDF Announcements
+
+on:
+  schedule:
+    - cron: '0 4,8,12 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y poppler-utils
+        pip install -r requirements.txt
+    
+    - name: Scrape and process
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: python process.py
+    
+    - name: Push to HuggingFace
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add data/
+        git diff --staged --quiet || git commit -m "📄 Update announcements"
+        git remote add hf https://user:${HF_TOKEN}@huggingface.co/spaces/rafaytalha23/psx-pdf-announcements || true
+        git push hf main --force || true
