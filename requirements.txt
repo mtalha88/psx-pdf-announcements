@@ -4,7 +4,8 @@ pandas
 requests
 pdfplumber>=0.10.0
 Pillow>=10.0.0
-transformers
+transformers>=4.40.0
 torch
+torchvision
 huggingface_hub
 datasets

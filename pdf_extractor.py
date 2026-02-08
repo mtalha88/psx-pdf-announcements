@@ -9,15 +9,18 @@ from PIL import Image
 _ocr_pipeline = None
 
 def load_ocr_model():
-    """Load TrOCR model from HuggingFace (free)."""
+    """Load TrOCR model directly for better stability."""
     global _ocr_pipeline
     if _ocr_pipeline is None:
         try:
-            from transformers import pipeline
-            _ocr_pipeline = pipeline("image-to-text", model="microsoft/trocr-base-printed")
-            print("TrOCR model loaded")
+            from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+            processor = TrOCRProcessor.from_pretrained("microsoft/trocr-base-printed")
+            model = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-base-printed")
+            _ocr_pipeline = (processor, model)
+            print("TrOCR model loaded successfully")
         except Exception as e:
             print(f"OCR load failed: {e}")
+            return None
     return _ocr_pipeline
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -30,10 +33,10 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             for page in pdf.pages:
-                # Try direct text extraction
+                # Try direct text extraction first
                 page_text = page.extract_text() or ""
                 
-                if page_text.strip():
+                if len(page_text.strip()) > 50:  # If significant text found, use it
                     text_parts.append(page_text)
                 else:
                     # Fallback: OCR on page image
@@ -46,15 +49,18 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     return "\n".join(text_parts)
 
 def ocr_page_image(page) -> str:
-    """OCR a PDF page using TrOCR."""
+    """OCR a PDF page using TrOCR direct inference."""
     try:
         # Convert page to image
-        img = page.to_image(resolution=150).original
+        img = page.to_image(resolution=150).original.convert("RGB")
         
-        pipeline = load_ocr_model()
-        if pipeline:
-            result = pipeline(img)
-            return result[0].get("generated_text", "") if result else ""
+        models = load_ocr_model()
+        if models:
+            processor, model = models
+            pixel_values = processor(images=img, return_tensors="pt").pixel_values
+            generated_ids = model.generate(pixel_values)
+            generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+            return generated_text
     except Exception as e:
         print(f"OCR error: {e}")
     return ""
