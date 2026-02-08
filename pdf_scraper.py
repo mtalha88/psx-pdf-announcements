@@ -1,35 +1,33 @@
 """
-PDF Scraper - Fetches PDF announcements from PSX.
-Uses PSX DPS API with fallback to Sarmaaya.
+PDF Scraper - Fetches PDF/Image announcements from PSX using Playwright.
+Uses PSX website directly (browser automation) with fallback to Sarmaaya.
 """
 import requests
 from datetime import datetime, timezone, timedelta
-from config import SARMAAYA_API_URL, DATA_DIR
-
-# PSX Endpoints
-PSX_API_URL = "https://dps.psx.com.pk/api/announcements"
+from playwright.sync_api import sync_playwright
+import time
+from config import SARMAAYA_API_URL
 
 def fetch_announcements(days: int = 7, ticker: str = None):
-    """Fetch announcements from PSX API."""
-    now = datetime.now(timezone.utc) + timedelta(hours=5)  # PKT
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Referer": "https://dps.psx.com.pk/announcements"
-    }
-    
-    # Try PSX API first
+    """Fetch announcements from PSX website using Playwright."""
+    print("Fetching from PSX website using Playwright...")
+    psx_results = []
     try:
-        resp = requests.get(PSX_API_URL, headers=headers, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        return parse_psx_response(data, ticker, days)
+        psx_results = scrape_psx_browser(days, ticker)
     except Exception as e:
-        print(f"PSX API failed: {e}, trying Sarmaaya...")
+        print(f"PSX browser scrape failed: {e}")
     
+    if psx_results:
+        return psx_results
+
+    print("Trying Sarmaaya fallback...")
     # Fallback to Sarmaaya
     try:
+        now = datetime.now(timezone.utc) + timedelta(hours=5)  # PKT
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://dps.psx.com.pk/"
+        }
         params = {
             "from": (now - timedelta(days=days)).strftime("%Y-%m-%d"),
             "to": now.strftime("%Y-%m-%d")
@@ -46,35 +44,95 @@ def fetch_announcements(days: int = 7, ticker: str = None):
         print(f"Sarmaaya API failed: {e}")
         return []
 
-def parse_psx_response(data, ticker, days):
-    """Parse PSX API response."""
-    processed = []
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+def scrape_psx_browser(days: int, ticker: str = None):
+    """Scrape PSX announcements using Playwright."""
+    results = []
     
-    for item in data if isinstance(data, list) else data.get("data", []):
-        symbol = item.get("symbol", "").strip()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
         
-        if ticker and symbol.upper() != ticker.upper():
-            continue
+        # Navigate to Companies Announcements
+        url = "https://dps.psx.com.pk/announcements/companies"
+        print(f"Navigating to {url}...")
+        page.goto(url)
         
-        # Find PDF attachment
-        pdf_url = None
-        for att in item.get("attachments", []):
-            url = att.get("url", str(att)) if isinstance(att, dict) else str(att)
-            if url.lower().endswith('.pdf'):
-                pdf_url = url
-                break
-        
-        processed.append({
-            "ticker": symbol,
-            "title": item.get("title", item.get("announcementTitle", "")).strip(),
-            "date": item.get("date", item.get("postingDate")),
-            "pdf_url": pdf_url,
-            "dividend": item.get("dividend"),
-            "period_ended": item.get("periodEnded")
-        })
-    
-    return processed
+        try:
+            # Wait for table
+            page.wait_for_selector("table tbody tr", timeout=20000)
+            
+            # Select relevant rows
+            # Note: Pagination is not handled here (usually unnecessary for recent days unless high volume)
+            rows = page.query_selector_all("table tbody tr")
+            print(f"Found {len(rows)} rows on page.")
+            
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            
+            for row in rows:
+                cells = row.query_selector_all("td")
+                if len(cells) < 6:
+                    continue
+                
+                # Extract Cells
+                date_str = cells[0].inner_text().strip()  # "Feb 6, 2026"
+                time_str = cells[1].inner_text().strip()  # "4:24 PM"
+                symbol = cells[2].inner_text().strip()    # "SYM"
+                company = cells[3].inner_text().strip()   # "Symmetry Group Limited"
+                title = cells[4].inner_text().strip()     # "Disclosure..."
+                
+                # Attachment Link logic
+                pdf_url = None
+                att_cell = cells[5]
+                link = att_cell.query_selector("a")
+                
+                if link:
+                    href = link.get_attribute("href")
+                    if href and not href.startswith("javascript"):
+                        if href.startswith("/"):
+                            pdf_url = f"https://dps.psx.com.pk{href}"
+                        else:
+                            pdf_url = href
+                    else:
+                        # Check data-images for JS links
+                        data_img = link.get_attribute("data-images")
+                        if data_img:
+                            # Construct URL for image/pdf
+                            # Usually format: /download/attachment/{filename}
+                            # Handling simple case:
+                            filename = data_img.split(",")[0].strip() if "," in data_img else data_img
+                            pdf_url = f"https://dps.psx.com.pk/download/attachment/{filename}"
+
+                # Filter by Ticker
+                if ticker and symbol.upper() != ticker.upper():
+                    continue
+                
+                # Filter by Date
+                try:
+                    # Parse "Feb 6, 2026"
+                    row_dt = datetime.strptime(date_str, "%b %d, %Y").replace(tzinfo=timezone.utc)
+                    if row_dt < cutoff_date:
+                        # Assuming rows are sorted desc, we can break?
+                        # Probably safer to continue checking a bit more
+                        if (cutoff_date - row_dt).days > 2:
+                            break 
+                        continue
+                except Exception:
+                    pass # Date parsing error, include it to be safe or skip?
+
+                results.append({
+                    "ticker": symbol,
+                    "title": title,
+                    "date": f"{date_str} {time_str}",
+                    "pdf_url": pdf_url, 
+                    "company": company
+                })
+                
+        except Exception as e:
+            print(f"Browser scraping error: {e}")
+        finally:
+            browser.close()
+            
+    return results
 
 def parse_sarmaaya_response(results, ticker):
     """Parse Sarmaaya API response."""
@@ -87,23 +145,28 @@ def parse_sarmaaya_response(results, ticker):
         
         pdf_url = None
         for att in item.get("attachments", []):
-            if str(att).lower().endswith('.pdf'):
-                pdf_url = att
-                break
+            attr_str = str(att)
+            if attr_str.lower().endswith('.pdf') or attr_str.lower().endswith('.gif') or attr_str.lower().endswith('.jpg'):
+                 # Ensure full URL if simple filename
+                 if attr_str.startswith("http"):
+                     pdf_url = attr_str
+                 else:
+                     # Sarmaaya usually returns full URLs but sometimes need verify
+                     pdf_url = attr_str
+                 break
         
         processed.append({
             "ticker": symbol,
             "title": item.get("announcementTitle", "").strip(),
             "date": item.get("postingDate"),
             "pdf_url": pdf_url,
-            "dividend": item.get("dividend"),
             "period_ended": item.get("periodEnded")
         })
     
     return processed
 
 def download_pdf(url: str) -> bytes:
-    """Download PDF and return bytes."""
+    """Download PDF or Image and return bytes."""
     if not url:
         return None
     try:
@@ -114,11 +177,3 @@ def download_pdf(url: str) -> bytes:
     except Exception as e:
         print(f"Download failed: {e}")
         return None
-
-if __name__ == "__main__":
-    print("Testing PDF scraper...")
-    results = fetch_announcements(days=30, ticker="LUCK")
-    print(f"Found {len(results)} announcements")
-    for r in results[:3]:
-        title = r.get('title', '')[:50] if r.get('title') else 'No title'
-        print(f"  - {title}... PDF: {bool(r.get('pdf_url'))}")
