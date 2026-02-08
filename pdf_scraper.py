@@ -123,7 +123,11 @@ def scrape_psx_browser(days: int, ticker: str = None, max_items: int = None):
                             data_img = link.get_attribute("data-images")
                             if data_img:
                                 filename = data_img.split(",")[0].strip() if "," in data_img else data_img
-                                pdf_url = f"https://dps.psx.com.pk/download/attachment/{filename}"
+                                # Logic to distinguish /image/ vs /attachment/
+                                if filename.lower().endswith(('.gif', '.jpg', '.jpeg', '.png', '.bmp')):
+                                    pdf_url = f"https://dps.psx.com.pk/download/image/{filename}"
+                                else:
+                                    pdf_url = f"https://dps.psx.com.pk/download/attachment/{filename}"
                     
                     # Smart PDF Discovery
                     final_url = pdf_url
