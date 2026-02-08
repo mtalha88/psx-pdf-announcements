@@ -156,7 +156,9 @@ def scrape_psx_browser(days: int, ticker: str = None, max_items: int = None):
                 # Check if we should stop (if checked all rows and none matched date? No, assuming sorted)
                 
                 # Pagination
-                next_btn = page.locator(".form__button.next") # Found via testing
+                # Use .first because there might be two Next buttons (top and bottom)
+                next_btn = page.locator(".form__button.next").first 
+                
                 # Check if disabled
                 # "form__button prev disabled" - class check?
                 # or just try click
