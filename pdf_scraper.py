@@ -4,7 +4,6 @@ Uses PSX website directly (browser automation) with fallback to Sarmaaya.
 """
 import requests
 from datetime import datetime, timezone, timedelta
-from playwright.sync_api import sync_playwright
 import time
 from config import SARMAAYA_API_URL
 
@@ -46,6 +45,12 @@ def fetch_announcements(days: int = 7, ticker: str = None):
 
 def scrape_psx_browser(days: int, ticker: str = None):
     """Scrape PSX announcements using Playwright."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("Playwright not installed. Skipping browser scrape.")
+        return []
+
     results = []
     
     with sync_playwright() as p:
