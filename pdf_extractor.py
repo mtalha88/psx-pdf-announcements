@@ -18,38 +18,80 @@ def _get_ocr_model():
             print("Loading PaddleOCR model...")
             # utilize CPU for Spaces (unless GPU available)
             # lang='en' covers English and numbers
-            _ocr_model = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
+            _ocr_model = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
         except Exception as e:
             print(f"Failed to load PaddleOCR: {e}")
             return None
     return _ocr_model
 
-def _run_ocr(image):
-    """Run PaddleOCR on a PIL Image."""
-    ocr = _get_ocr_model()
-    if not ocr:
-        return ""
-    
+# GOT-OCR Model (Lazy Load)
+_got_model = None
+_got_tokenizer = None
+
+def _get_got_model():
+    global _got_model, _got_tokenizer
+    if _got_model is None:
+        try:
+            from transformers import AutoModel, AutoTokenizer
+            print("Loading GOT-OCR 2.0 model...")
+            # trust_remote_code=True is essential
+            _got_tokenizer = AutoTokenizer.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True)
+            _got_model = AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True, low_cpu_mem_usage=True, use_safetensors=True)
+            _got_model = _got_model.eval()
+        except Exception as e:
+            print(f"Failed to load GOT-OCR: {e}")
+            return None, None
+    return _got_model, _got_tokenizer
+
+def _run_got_ocr(image):
+    """Run GOT-OCR 2.0 on a PIL Image."""
+    model, tokenizer = _get_got_model()
+    if not model: return ""
     try:
-        import numpy as np
-        # Convert PIL to Numpy (RGB)
-        img_np = np.array(image.convert("RGB"))
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            image.save(tmp.name)
+            tmp_path = tmp.name
         
-        # Run OCR
-        result = ocr.ocr(img_np, cls=True)
+        res = model.chat(tokenizer, tmp_path, ocr_type='ocr')
         
-        # Parse results
-        # Result structure: [[[[x1,y1],[x2,y2]...], ("text", conf)], ...]
-        text_lines = []
-        if result and result[0]:
-            for line in result[0]:
-                text = line[1][0]
-                text_lines.append(text)
+        try: os.unlink(tmp_path) 
+        except: pass
         
-        return "\n".join(text_lines)
+        return res
     except Exception as e:
-        print(f"OCR Error: {e}")
+        print(f"GOT-OCR Error: {e}")
         return ""
+
+def _run_ocr(image):
+    """Run PaddleOCR on a PIL Image, fallback to GOT-OCR."""
+    text_result = ""
+    
+    # 1. Try PaddleOCR (Fast, Structured)
+    ocr = _get_ocr_model()
+    if ocr:
+        try:
+            import numpy as np
+            img_np = np.array(image.convert("RGB"))
+            result = ocr.ocr(img_np, cls=True)
+            
+            text_lines = []
+            if result and result[0]:
+                for line in result[0]:
+                    text_lines.append(line[1][0])
+            text_result = "\n".join(text_lines)
+        except Exception as e:
+            print(f"PaddleOCR Error: {e}")
+
+    # 2. Fallback check
+    # If text is empty or very short, try GOT-OCR
+    if len(text_result.strip()) < 10:
+        print("PaddleOCR result poor/empty. Trying GOT-OCR (Generative)...")
+        got_text = _run_got_ocr(image)
+        if got_text:
+            text_result = got_text
+            
+    return text_result
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF or Image file bytes."""

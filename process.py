@@ -20,18 +20,19 @@ def main():
     
     try:
         # Try to load existing dataset
-        dataset = load_dataset(HF_DATASET_ID, split="train")
+        dataset = load_dataset(HF_DATASET_ID, split="train", token=HF_TOKEN)
         existing_df = dataset.to_pandas()
         print(f"Loaded existing dataset with {len(existing_df)} rows")
         
         # Calculate last scraped date
-        if not existing_df.empty and "date" in existing_df.columns:
-            # Convert to datetime to find max
-            # Format in DB is usually "Feb 6, 2026 4:24 PM" string
-            # We need to parse it robustly
-            dates = pd.to_datetime(existing_df['date'], errors='coerce', utc=True)
-            last_date = dates.max()
-            print(f"Latest date in dataset: {last_date}")
+        if not existing_df.empty:
+             if "date" in existing_df.columns:
+                # Convert to datetime to find max
+                # Format in DB is usually "Feb 6, 2026 4:24 PM" string
+                # We need to parse it robustly
+                dates = pd.to_datetime(existing_df['date'], errors='coerce', utc=True)
+                last_date = dates.max()
+                print(f"Latest date in dataset: {last_date}")
             
     except Exception as e:
         print(f"Dataset load error (expected if first run/empty): {e}")

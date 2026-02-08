@@ -10,6 +10,9 @@ torchvision
 # OCR
 paddlepaddle
 paddleocr
+accelerate
+tiktoken
+verovio
 opencv-python-headless
 huggingface_hub
 datasets
