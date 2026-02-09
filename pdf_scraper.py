@@ -122,7 +122,13 @@ def scrape_psx_browser(days: int, ticker: str = None, max_items: int = None):
                         else:
                             data_img = link.get_attribute("data-images")
                             if data_img:
-                                filename = data_img.split(",")[0].strip() if "," in data_img else data_img
+                                # data-images can be comma-separated like "269906,269906-1.gif"
+                                # Find the part that has a file extension
+                                parts = [p.strip() for p in data_img.split(",")]
+                                filename = next(
+                                    (p for p in parts if p.lower().endswith(('.gif', '.jpg', '.jpeg', '.png', '.bmp', '.pdf'))),
+                                    parts[-1]  # Fallback to last part if no extension found
+                                )
                                 # Logic to distinguish /image/ vs /attachment/
                                 if filename.lower().endswith(('.gif', '.jpg', '.jpeg', '.png', '.bmp')):
                                     pdf_url = f"https://dps.psx.com.pk/download/image/{filename}"
