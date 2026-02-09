@@ -26,61 +26,61 @@ def _get_ocr_model():
             return None
     return _ocr_model
 
-# GOT-OCR Model (Lazy Load)
-_got_model = None
-_got_tokenizer = None
+# Florence-2 Model (Lazy Load)
+_florence_model = None
+_florence_processor = None
 
-def _get_got_model():
-    global _got_model, _got_tokenizer
-    if _got_model is None:
+def _get_florence_model():
+    global _florence_model, _florence_processor
+    if _florence_model is None:
         try:
-            from transformers import AutoModel, AutoTokenizer
-            print("Loading GOT-OCR 2.0 model...")
-            # trust_remote_code=True is essential
-            _got_tokenizer = AutoTokenizer.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True)
+            from transformers import AutoProcessor, AutoModelForCausalLM
+            print("Loading Florence-2-base model...")
+            # Use 'microsoft/Florence-2-base' which is lighter and faster
+            model_id = 'microsoft/Florence-2-base'
+            _florence_model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
+            _florence_processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
             
-            # Fix for "NoneType" error during padding
-            if _got_tokenizer.pad_token is None:
-                # Use eos_token as pad_token if missing
-                _got_tokenizer.pad_token = _got_tokenizer.eos_token
-                _got_tokenizer.pad_token_id = _got_tokenizer.eos_token_id
-            
-            _got_model = AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True, low_cpu_mem_usage=True, use_safetensors=True, pad_token_id=_got_tokenizer.pad_token_id)
-            _got_model = _got_model.eval()
+            # Move to device if available (optional optimization, keep CPU default for broad compat)
+            # _florence_model.to("cuda" if torch.cuda.is_available() else "cpu")
+            _florence_model.eval()
         except Exception as e:
-            print(f"Failed to load GOT-OCR: {e}")
+            print(f"Failed to load Florence-2: {e}")
             return None, None
-    return _got_model, _got_tokenizer
+    return _florence_model, _florence_processor
 
-def _run_got_ocr(image):
-    """Run GOT-OCR 2.0 on a PIL Image."""
-    model, tokenizer = _get_got_model()
+def _run_florence_ocr(image):
+    """Run Florence-2 OCR on a PIL Image."""
+    model, processor = _get_florence_model()
     if not model: return ""
     try:
-        import tempfile, os
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            image.save(tmp.name)
-            tmp_path = tmp.name
+        # Prompt for OCR
+        prompt = "<OCR>"
         
-        # Check if tokenizer is valid
-        if tokenizer is None:
-             print("GOT-OCR Error: Tokenizer is None")
-             return ""
-             
-        res = model.chat(tokenizer, tmp_path, ocr_type='ocr')
+        inputs = processor(text=prompt, images=image, return_tensors="pt")
         
-        try: os.unlink(tmp_path) 
-        except: pass
+        # Move inputs to same device as model
+        # inputs = {k: v.to(model.device) for k, v in inputs.items()}
         
-        return res
+        generated_ids = model.generate(
+            input_ids=inputs["input_ids"],
+            pixel_values=inputs["pixel_values"],
+            max_new_tokens=1024,
+            do_sample=False,
+            num_beams=3,
+        )
+        generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+        parsed_answer = processor.post_process_generation(generated_text, task=prompt, image_size=(image.width, image.height))
+        
+        return parsed_answer.get("<OCR>", "")
     except Exception as e:
-        print(f"GOT-OCR Error: {e}")
+        print(f"Florence-2 Error: {e}")
         import traceback
         traceback.print_exc()
         return ""
 
 def _run_ocr(image):
-    """Run PaddleOCR on a PIL Image, fallback to GOT-OCR."""
+    """Run PaddleOCR on a PIL Image, fallback to Florence-2."""
     text_result = ""
     
     # 1. Try PaddleOCR (Fast, Structured)
@@ -101,16 +101,16 @@ def _run_ocr(image):
             print(f"PaddleOCR Error: {e}")
 
     # 2. Fallback check
-    # If text is empty or very short, try GOT-OCR
+    # If text is empty or very short, try Florence-2
     if len(text_result.strip()) < 10:
-        print("PaddleOCR result poor/empty. Trying GOT-OCR (Generative)...")
+        print("PaddleOCR result poor/empty. Trying Florence-2 (Generative/Multimodal)...")
         # Ensure image is valid
         if image:
-             got_text = _run_got_ocr(image)
-             if got_text:
-                 text_result = got_text
+             florence_text = _run_florence_ocr(image)
+             if florence_text:
+                 text_result = florence_text
         else:
-             print("GOT-OCR skipped: Image is None")
+             print("Florence-2 skipped: Image is None")
             
     return text_result
 
